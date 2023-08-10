@@ -32,16 +32,16 @@ function old_snapshots() {
     # get list of snapshots beyond number to keep
     # 1. get snapshots of root dataset
     # 2. only print snapshot names
-    local source=$1
+    local dataset=$1
     local keep=${2:-3}
-    zfs list -H -o name -t snapshot ${source/@*} | grep $source | head --lines -$keep
+    zfs list -H -o name -t snapshot $dataset | grep @$snapshot_series | head --lines -$keep
 }
 
 function destroy_old_snapshots() {
-    local source=$1
+    local dataset=$1
     local keep=${2:-3}
     local snap
-    for snap in $(old_snapshots $source $keep); do
+    for snap in $(old_snapshots $dataset $keep); do
         echo zfs destroy $flags -R $snap
         echo Deleting old snapshot $snap
     done
@@ -55,28 +55,25 @@ function send_snapshots() {
     # 5. If we have previous snapshots, send them all.
 
     local source_dataset
-    local target
-    local source_dataset
+    local target_dataset
     local last_snapshot
     local target_mountpoint
+    local source_args
 
     source_dataset=$1
-    target=$2
+    target_dataset=$2
 
     target_mountpoint=/mnt/$target/$source_dataset
-    last_snapshot=$(previous_snapshot $source $target)
-
-    echo "$(date) Starting $source backups"
-
+    last_snapshot=$(previous_snapshot $source_dataset $target_dataset)
+    echo "$(date) Starting $source_dataset backups"
     zfs snapshot -r $source_dataset@${snapshot_series}-$(today)
-
     if [[ -n $last_snapshot ]]; then
-        zfs send -v $flags -R -I $last_snapshot $source_dataset@{snapshot_series}-$(today) | zfs receive -v $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target
+        source_args="-I $last_snapshot $source_dataset@{snapshot_series}-$(today)"
     else
-        zfs send -v $flags -R $source_dataset@{snapshot_series}-$(today) | zfs receive -v $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target
+        source_args="$source_dataset@{snapshot_series}-$(today)"
     fi
-
-    echo "$(date) $source Done"
+    zfs send -v $flags -R $source_args | zfs receive -v $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target_dataset
+    echo "$(date) $source_dataset Done"
 }
 
 function running_containers() {
@@ -113,7 +110,8 @@ function main() {
     start_stop_containers "$containers" "stop"
 
     send_snapshots disk1 gattaca/zfs_snapshots
-    destroy_old_snapshots disk1@$snapshot_series 3
+    destroy_old_snapshots disk1 3
+    destroy_old_snapshots gattaca/zfs_snapshots 10
 
     start_stop_containers "$containers" "start"
 }
