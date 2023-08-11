@@ -63,16 +63,16 @@ function send_snapshots() {
     source_dataset=$1
     target_dataset=$2
 
-    target_mountpoint=/mnt/$target/$source_dataset
+    target_mountpoint=/mnt/$target_dataset/$source_dataset
     last_snapshot=$(previous_snapshot $source_dataset $target_dataset)
     echo "$(date) Starting $source_dataset backups"
-    zfs snapshot -r $source_dataset@${snapshot_series}-$(today)
+    zfs snapshot -r $source_dataset@${snapshot_series}-$(today) || true
     if [[ -n $last_snapshot ]]; then
-        source_args="-I $last_snapshot $source_dataset@{snapshot_series}-$(today)"
+        source_args="-I $last_snapshot $source_dataset@${snapshot_series}-$(today)"
     else
-        source_args="$source_dataset@{snapshot_series}-$(today)"
+        source_args="$source_dataset@${snapshot_series}-$(today)"
     fi
-    zfs send -v $flags -R $source_args | zfs receive -v $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target_dataset
+    zfs send $flags -R $source_args | zfs receive $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target_dataset
     echo "$(date) $source_dataset Done"
 }
 
