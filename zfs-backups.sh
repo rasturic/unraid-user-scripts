@@ -1,10 +1,11 @@
 #!/bin/bash
 #arrayStarted=true
-# WIP - not ready for use
-# Send selected sources to backup zfs pool
+#name=zfs-backups
+#description=Send selected zfs sources to backup zfs pool
+
+# WIP and subject to change.  I wrote this for myself, not for the public.  Use at your own risk.
 # Expected snapshot names look like poolname@$snapshot_series-YYYY-MM-DD
 
-set -x
 set -e
 
 function previous_snapshot() {
@@ -42,7 +43,7 @@ function destroy_old_snapshots() {
     local keep=${2:-3}
     local snap
     for snap in $(old_snapshots $dataset $keep); do
-        echo zfs destroy $flags -R $snap
+        zfs destroy $flags -R $snap
         echo Deleting old snapshot $snap
     done
 }
@@ -72,7 +73,7 @@ function send_snapshots() {
     else
         source_args="$source_dataset@${snapshot_series}-$(today)"
     fi
-    zfs send $flags -R $source_args | zfs receive $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target_dataset
+    zfs send -v $flags -R $source_args | zfs receive -v $flags -o readonly=on -o mountpoint=$target_mountpoint -e $target_dataset
     echo "$(date) $source_dataset Done"
 }
 
@@ -109,6 +110,7 @@ function main() {
 
     start_stop_containers "$containers" "stop"
 
+    # Edit to suit.  Add sources, targets, and daily snapshot retentions
     send_snapshots disk1 gattaca/zfs_snapshots
     destroy_old_snapshots disk1 3
     destroy_old_snapshots gattaca/zfs_snapshots 10
@@ -116,8 +118,8 @@ function main() {
     start_stop_containers "$containers" "start"
 }
 
-stop_containers=0
-flags="-n"
+stop_containers=1
+flags=
 snapshot_series=daily
 ignore_containers="^(smokeping)"
 
