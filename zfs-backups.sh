@@ -13,7 +13,8 @@ function previous_snapshot() {
     # Return source named snapshot
     local source=$1
     local target=$2
-    local target_snapshot
+    local target_snapshot snapshot_series
+    snapshot_series=${snapshot_series:-daily}
     target_snapshot=$(zfs list -H -o name -t snapshot ${target}/${source} 2>/dev/null | grep @$snapshot_series | tail --lines 1 | awk -F@ '{print $2}')
     if [[ -n $target_snapshot ]]; then
 	    zfs list -H -o name -t snapshot $source | grep $target_snapshot | tail --lines 1
@@ -34,18 +35,38 @@ function old_snapshots() {
     # 1. get snapshots of root dataset
     # 2. only print snapshot names
     local dataset=$1
-    local keep=${2:-3}
+    local snapshot_series=${2:-daily}
+    local keep=${3:-3}
     zfs list -H -o name -t snapshot $dataset | grep @$snapshot_series | head --lines -$keep
 }
 
 function destroy_old_snapshots() {
     local dataset=$1
     local keep=${2:-3}
-    local snap
-    for snap in $(old_snapshots $dataset $keep); do
+    local snapshot_series snap
+    snapshot_series=${snapshot_series:-daily}
+    for snap in $(snapshot_series=$snapshot_series old_snapshots $dataset $keep); do
         zfs destroy $flags -R $snap
         echo Deleting old snapshot $snap
     done
+}
+
+function create_snapshots() {
+    local dataset=$1
+    local snapshot_series=$2
+
+    local weekly_day=Mon
+    local monthly_day=1
+
+    if [[ $snapshot_series == daily ]]; then
+      zfs snapshot -r $dataset@${snapshot_series}-$(today) || true
+    fi
+    if [[ $snapshot_series == weekly ]] && [[ $((date +%a)) == $weekly_day ]]; then
+      zfs snapshot -r $dataset@${snapshot_series}-$(today) || true
+    fi
+    if [[ $snapshot_series == monthly ]] && [[ $((date +%a)) == $montlhy_day ]]; then
+      zfs snapshot -r $dataset@${snapshot_series}-$(today) || true
+    fi
 }
 
 function send_snapshots() {
@@ -112,8 +133,19 @@ function main() {
 
     # Edit to suit.  Add sources, targets, and daily snapshot retentions
     send_snapshots disk1 gattaca/zfs_snapshots
-    destroy_old_snapshots disk1 3
-    destroy_old_snapshots gattaca/zfs_snapshots 10
+
+    # trim daily snapshots sent over
+    destroy_old_snapshots disk1 daily 3
+    destroy_old_snapshots gattaca/zfs_snapshots/disk1 daily 10
+
+    # create long term snapshots
+    create_snapshots gattaca/zfs_snapshots/disk1 weekly
+    create_snapshots gattaca/zfs_snapshots/disk1 monthly
+
+    # trim long term snapshots
+    snapshot_series=weekly destroy_old_snpashots gattaca/zfs_snapshots/disk1 8
+    snapshot_series=monthly destroy_old_snpashots gattaca/zfs_snapshots/disk1 6
+    snapshot_series=yearly destroy_old_snpashots gattaca/zfs_snapshots/disk1 2
 
     start_stop_containers "$containers" "start"
 }
